@@ -2,20 +2,14 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
-import { createClient } from '@supabase/supabase-js';
+ */
 import { create } from 'zustand';
 import { ConversationTurn } from './state';
-
-const SUPABASE_URL = 'https://gkaszpjcfdkehoivihju.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrYXN6cGpjZmRrZWhvaXZpaGp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MjQwMjMsImV4cCI6MjA3NTMwMDAyM30.u0dxNr1LbH31OmlT7KzloKI6V_k-8uWOCslg3PE9UYw';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- AUTH STORE ---
 interface AuthState {
   session: any | null;
-  user: { id: string; email: string; } | null;
+  user: { id: string; email: string } | null;
   isSuperAdmin: boolean;
   loading: boolean;
   loadingData: boolean;
@@ -26,49 +20,86 @@ interface AuthState {
 }
 
 export const useAuth = create<AuthState>(() => ({
-  session: { MOCKED: true }, 
-  user: { id: 'local-user', email: 'local-user@example.com' }, 
+  session: { MOCKED: true },
+  user: { id: 'local-user', email: 'local-user@example.com' },
   isSuperAdmin: true,
   loading: false,
   loadingData: false,
-  signOut: () => { /* No operation */ },
-  signInWithPassword: async () => { return Promise.resolve(); },
-  signUp: async () => { return Promise.resolve(); },
-  sendPasswordResetEmail: async () => { return Promise.resolve(); },
+  signOut: () => {
+    /* No operation */
+  },
+  signInWithPassword: async () => {
+    return Promise.resolve();
+  },
+  signUp: async () => {
+    return Promise.resolve();
+  },
+  sendPasswordResetEmail: async () => {
+    return Promise.resolve();
+  },
 }));
 
-// --- DATABASE HELPERS ---
-export const updateUserSettings = async (userId: string, newSettings: Partial<{ systemPrompt: string; voice: string }>) => {
-  const { error } = await supabase
-    .from('user_settings')
-    .upsert({ user_id: userId, ...newSettings });
-  if (error) console.error('Error saving settings:', error);
+// --- LOCAL STORAGE HELPERS FOR OFFLINE EDGE USAGE ---
+const SETTINGS_KEY = 'edgetr_local_user_settings';
+const CONVERSATIONS_KEY = 'edgetr_local_user_conversations';
+
+export const updateUserSettings = async (
+  userId: string,
+  newSettings: Partial<{ systemPrompt: string; voice: string }>
+) => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const existing = localStorage.getItem(`${SETTINGS_KEY}_${userId}`);
+      const parsed = existing ? JSON.parse(existing) : {};
+      localStorage.setItem(
+        `${SETTINGS_KEY}_${userId}`,
+        JSON.stringify({ ...parsed, ...newSettings })
+      );
+    }
+  } catch (e) {
+    console.warn('Could not save user settings locally:', e);
+  }
   return Promise.resolve();
 };
 
-export const updateUserConversations = async (userId: string, turns: ConversationTurn[]) => {
-  // FIX: Replaced .at(-1) with standard index access to resolve "Property 'at' does not exist" error.
+export const updateUserConversations = async (
+  userId: string,
+  turns: ConversationTurn[]
+) => {
   const lastTurn = turns[turns.length - 1];
   if (!lastTurn || !lastTurn.isFinal) return;
 
-  const { error } = await supabase
-    .from('translations')
-    .insert({
-      user_id: userId,
-      role: lastTurn.role,
-      text: lastTurn.text,
-      timestamp: lastTurn.timestamp.toISOString(),
-    });
-
-  if (error) {
-    console.error('Error saving turn to Supabase:', error);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const existing = localStorage.getItem(`${CONVERSATIONS_KEY}_${userId}`);
+      const parsed: any[] = existing ? JSON.parse(existing) : [];
+      parsed.push({
+        user_id: userId,
+        role: lastTurn.role,
+        text: lastTurn.text,
+        timestamp: lastTurn.timestamp
+          ? new Date(lastTurn.timestamp).toISOString()
+          : new Date().toISOString(),
+      });
+      // Keep last 100 turns in local buffer
+      if (parsed.length > 100) parsed.shift();
+      localStorage.setItem(
+        `${CONVERSATIONS_KEY}_${userId}`,
+        JSON.stringify(parsed)
+      );
+    }
+  } catch (e) {
+    console.warn('Could not save conversation turn locally:', e);
   }
 };
 
 export const clearUserConversations = async (userId: string) => {
-  const { error } = await supabase
-    .from('translations')
-    .delete()
-    .eq('user_id', userId);
-  if (error) console.error('Error clearing history:', error);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.removeItem(`${CONVERSATIONS_KEY}_${userId}`);
+    }
+  } catch (e) {
+    console.warn('Could not clear user conversations locally:', e);
+  }
 };
+
