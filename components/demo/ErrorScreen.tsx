@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { useLiveAPIContext } from '../../contexts/LiveAPIContext';
+import { useLocalPipeline } from '../../contexts/LocalPipelineContext';
 import React, { useEffect, useState } from 'react';
 
 export interface ExtendedErrorType {
@@ -12,11 +12,11 @@ export interface ExtendedErrorType {
 }
 
 export default function ErrorScreen() {
-  const { client } = useLiveAPIContext();
+  const { client } = useLocalPipeline();
   const [error, setError] = useState<{ message?: string } | null>(null);
 
   useEffect(() => {
-    function onError(error: ErrorEvent) {
+    function onError(error: any) {
       console.error(error);
       setError(error);
     }
@@ -28,17 +28,9 @@ export default function ErrorScreen() {
     };
   }, [client]);
 
-  const quotaErrorMessage =
-    'Gemini Live API in AI Studio has a limited free quota each day. Come back tomorrow to continue.';
-
-  let errorMessage = 'Something went wrong. Please try again.';
+  let errorMessage = 'Er is een fout opgetreden. Probeer het opnieuw.';
   let rawMessage: string | null = error?.message || null;
   let tryAgainOption = true;
-  if (error?.message?.includes('RESOURCE_EXHAUSTED') || error?.message?.toLowerCase().includes('quota')) {
-    errorMessage = quotaErrorMessage;
-    rawMessage = error?.message?.toLowerCase().includes('quota') ? error.message : null;
-    tryAgainOption = false;
-  }
 
   if (!error) {
     return <div style={{ display: 'none' }} />;

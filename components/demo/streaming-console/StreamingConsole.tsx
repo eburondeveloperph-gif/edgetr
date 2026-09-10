@@ -5,20 +5,18 @@
 */
 import { useEffect, useRef } from 'react';
 import WelcomeScreen from '../welcome-screen/WelcomeScreen';
-// FIX: Import LiveServerContent to correctly type the content handler.
-import { Modality, LiveServerContent, Type, LiveServerToolCall } from '@google/genai';
-
-import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
+import { useLocalPipeline } from '../../../contexts/LocalPipelineContext';
 import {
   useSettings,
   useLogStore,
   ConversationTurn,
+  LiveServerToolCall,
 } from '../../../lib/state';
 import { useHistoryStore } from '../../../lib/history';
 import { useAuth, updateUserConversations } from '../../../lib/auth';
 
 export default function StreamingConsole() {
-  const { client, setConfig, connected } = useLiveAPIContext();
+  const { client, setConfig, connected } = useLocalPipeline();
   const { systemPrompt, voice, language1, language2 } = useSettings();
   const { addHistoryItem } = useHistoryStore();
   const { user } = useAuth();
@@ -34,7 +32,7 @@ export default function StreamingConsole() {
     // Using `any` for config to accommodate `speechConfig`, which is not in the
     // current TS definitions but is used in the working reference example.
     const config: any = {
-      responseModalities: [Modality.AUDIO],
+      responseModalities: ['AUDIO'],
       inputAudioTranscription: {},
       outputAudioTranscription: {},
       speechConfig: {
@@ -58,10 +56,10 @@ export default function StreamingConsole() {
               name: 'setGuestLanguage',
               description: `Update the "LATEST PAIRED LANGUAGE" (the non-${language1} language). Call this tool whenever you detect a new language from the OTHER group, or when the user explicitly mentions a language they want to use.`,
               parameters: {
-                type: Type.OBJECT,
+                type: 'OBJECT',
                 properties: {
                   language: {
-                    type: Type.STRING,
+                    type: 'STRING',
                     description: 'The name of the language (e.g. English, Tagalog, Spanish, French).',
                   },
                 },
@@ -105,7 +103,7 @@ export default function StreamingConsole() {
       }
     };
 
-    const handleContent = (serverContent: LiveServerContent) => {
+    const handleContent = (serverContent: any) => {
       const text =
         serverContent.modelTurn?.parts
           ?.map((p: any) => p.text)
@@ -167,7 +165,9 @@ export default function StreamingConsole() {
           };
         });
 
-        client.sendToolResponse({ functionResponses });
+        if (typeof (client as any).sendToolResponse === 'function') {
+          (client as any).sendToolResponse({ functionResponses });
+        }
       }
     };
 

@@ -25,20 +25,13 @@ import StreamingConsole from './components/demo/streaming-console/StreamingConso
 
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
-import { LiveAPIProvider } from './contexts/LiveAPIContext';
+import StorageManagerModal from './components/StorageManagerModal';
+import { LocalPipelineProvider } from './contexts/LocalPipelineContext';
 import { useAuth, updateUserSettings } from './lib/auth';
 import { useSettings } from './lib/state';
 
-const API_KEY = process.env.GEMINI_API_KEY;
-if (typeof API_KEY !== 'string') {
-  throw new Error(
-    'Missing required environment variable: GEMINI_API_KEY'
-  );
-}
-
 /**
- * Main application component that provides a streaming interface for Live API.
- * Manages video streaming state and provides controls for webcam/screen capture.
+ * Main application component that provides an offline voice-to-voice interface.
  */
 function App() {
   const { user } = useAuth();
@@ -64,10 +57,11 @@ function App() {
 
   return (
     <div className="App">
-      <LiveAPIProvider apiKey={API_KEY}>
+      <LocalPipelineProvider>
         <ErrorScreen />
         <Header />
         <Sidebar />
+        <StorageManagerModal />
         <div className="streaming-console">
           <main>
             <div className="main-app-area">
@@ -76,7 +70,7 @@ function App() {
             <ControlTray></ControlTray>
           </main>
         </div>
-      </LiveAPIProvider>
+      </LocalPipelineProvider>
     </div>
   );
 }

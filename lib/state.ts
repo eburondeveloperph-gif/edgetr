@@ -6,12 +6,31 @@
 import { create } from 'zustand';
 import { DEFAULT_LIVE_API_MODEL, DEFAULT_VOICE, AVAILABLE_LANGUAGES } from './constants';
 import { MEDICAL_TERMS } from './constants/medical-terms';
-import {
-  FunctionDeclaration,
-  FunctionResponse,
-  FunctionResponseScheduling,
-  LiveServerToolCall,
-} from '@google/genai';
+export enum FunctionResponseScheduling {
+  INTERRUPT = 'INTERRUPT',
+  WHEN_IDLE = 'WHEN_IDLE',
+  SILENT = 'SILENT',
+}
+
+export interface FunctionDeclaration {
+  name: string;
+  description?: string;
+  parameters?: any;
+}
+
+export interface FunctionResponse {
+  name: string;
+  response: any;
+  id?: string;
+}
+
+export interface LiveServerToolCall {
+  functionCalls: Array<{
+    name: string;
+    args: any;
+    id: string;
+  }>;
+}
 
 const generateSystemPrompt = (lang1: string, lang2: string, topic: string, autoDetect: boolean, medicalMode: boolean) => {
   const topicInstruction = topic ? `The conversation is about: ${topic}. Please use appropriate terminology and context.` : '';
@@ -231,10 +250,18 @@ export const useSettings = create<{
  */
 export const useUI = create<{
   isSidebarOpen: boolean;
+  isStorageOpen: boolean;
   toggleSidebar: () => void;
+  toggleStorage: () => void;
+  openStorage: () => void;
+  closeStorage: () => void;
 }>(set => ({
   isSidebarOpen: false,
+  isStorageOpen: false,
   toggleSidebar: () => set(state => ({ isSidebarOpen: !state.isSidebarOpen })),
+  toggleStorage: () => set(state => ({ isStorageOpen: !state.isStorageOpen })),
+  openStorage: () => set({ isStorageOpen: true }),
+  closeStorage: () => set({ isStorageOpen: false }),
 }));
 
 /**

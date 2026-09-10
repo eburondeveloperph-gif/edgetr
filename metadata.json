@@ -1,8 +1,10 @@
 {
-  "name": "AI Translator",
-  "description": "Real-time dual translation powered by Eburon AI",
+  "name": "EdgeTR - Offline Voice Assistant",
+  "description": "EdgeTR - 100% offline voice assistant for Android and iOS powered by Whisper Edge, Qwen 2.5, and Piper Flemish TTS.",
   "requestFramePermissions": [
     "microphone"
   ],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -4,7 +4,7 @@
 */
 import { useSettings, useUI } from '../lib/state';
 import c from 'classnames';
-import { useLiveAPIContext } from '../contexts/LiveAPIContext';
+import { useLocalPipeline } from '../contexts/LocalPipelineContext';
 import { useAuth } from '../lib/auth';
 import { useHistoryStore } from '../lib/history';
 import { AVAILABLE_LANGUAGES, AVAILABLE_VOICES } from '../lib/constants';
@@ -17,7 +17,7 @@ export default function Sidebar() {
     systemPrompt, voice, language1, language2, topic, autoDetect, customLanguages, medicalMode,
     setSystemPrompt, setVoice, setLanguage1, setLanguage2, setTopic, setAutoDetect, setMedicalMode
   } = useSettings();
-  const { connected } = useLiveAPIContext();
+  const { connected } = useLocalPipeline();
   const { isSuperAdmin } = useAuth();
   const { history, clearHistory } = useHistoryStore();
 
@@ -156,6 +156,24 @@ export default function Sidebar() {
             disabled={connected}
           >
             Save Settings
+          </button>
+        </div>
+        <div className="sidebar-section">
+          <div className="sidebar-section-title-wrapper">
+            <h4 className="sidebar-section-title">Lokaal Toestel Opslag</h4>
+          </div>
+          <p className="text-xs text-white/60 mb-3">
+            Offline AI-modellen (Whisper, Qwen, Piper Flemish) worden direct op uw toestel opgeslagen.
+          </p>
+          <button
+            onClick={() => {
+              toggleSidebar();
+              useUI.getState().openStorage();
+            }}
+            className="w-full py-2 px-3 text-xs font-semibold text-white bg-[#1c1f26] hover:bg-[#232729] border border-[#217bfe]/40 rounded-lg transition-all flex items-center justify-center gap-2"
+          >
+            <span className="icon text-base text-[#448dff]">sd_storage</span>
+            Beheer Modellen & Schijfruimte
           </button>
         </div>
         <div className="sidebar-section history-section">

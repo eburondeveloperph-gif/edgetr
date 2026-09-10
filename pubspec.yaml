@@ -1,0 +1,47 @@
+name: edgetr
+description: "EdgeTR - Fully offline voice-to-voice assistant for Android & iOS powered by Whisper Edge, Qwen 2.5 LLM, and Piper Flemish TTS."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Speech-to-Text (Offline Whisper.cpp wrapper)
+  whisper_edge: ^0.1.0
+
+  # On-device LLM (Qwen 2.5 0.5B Instruct GGUF via llama.cpp)
+  mt_llmkit: ^0.1.0
+
+  # Text-to-Speech (Piper onnx engine with Flemish nl_BE voices)
+  flutter_piper_tts: ^0.1.0
+
+  # Voice Activity Detection (Silero VAD)
+  vad: ^0.0.7+1
+
+  # Microphone audio capture (Pinned to ^6.2.0 to resolve conflict with vad)
+  record: ^6.2.0
+
+  # Storage and device permissions
+  path_provider: ^2.1.2
+  permission_handler: ^11.3.1
+
+  # State management and utilities
+  provider: ^6.1.2
+  http: ^1.2.0
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/

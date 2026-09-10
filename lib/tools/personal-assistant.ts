@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { FunctionCall } from '../state';
-import { FunctionResponseScheduling } from '@google/genai';
+import { FunctionCall, FunctionResponseScheduling } from '../state';
 
 export const personalAssistantTools: FunctionCall[] = [
   {

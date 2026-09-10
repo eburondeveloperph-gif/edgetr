@@ -26,7 +26,7 @@ import { AudioRecorder } from '../../../lib/audio-recorder';
 import { useLogStore } from '../../../lib/state';
 import { useAuth, clearUserConversations } from '../../../lib/auth';
 import { useVAD } from '../../../hooks/use-vad';
-import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
+import { useLocalPipeline } from '../../../contexts/LocalPipelineContext';
 import MicVisualizer from '../../MicVisualizer';
 
 export type ControlTrayProps = {
@@ -50,7 +50,7 @@ function ControlTray({ children }: ControlTrayProps) {
     isTtsMuted,
     toggleTtsMute,
     isAiSpeaking,
-  } = useLiveAPIContext();
+  } = useLocalPipeline();
 
   useEffect(() => {
     if (connected) {
@@ -80,12 +80,14 @@ function ControlTray({ children }: ControlTrayProps) {
 
   useEffect(() => {
     const onData = (base64: string) => {
-      client.sendRealtimeInput([
-        {
-          mimeType: 'audio/pcm;rate=16000',
-          data: base64,
-        },
-      ]);
+      if (typeof (client as any).sendRealtimeInput === 'function') {
+        (client as any).sendRealtimeInput([
+          {
+            mimeType: 'audio/pcm;rate=16000',
+            data: base64,
+          },
+        ]);
+      }
     };
     const onVolume = (vol: number) => {
       setMicVolume(vol);
