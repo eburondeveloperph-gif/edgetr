@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
 import EventEmitter from 'eventemitter3';
-import { useLogStore } from '../lib/state';
+import { useLogStore, useSettings } from '../lib/state';
+import { useHistoryStore } from '../lib/history';
+import { generateOllamaTranslation } from '../lib/ollama';
+import { supertonicTts } from '../lib/supertonic-tts';
 
 export interface LocalPipelineContextType {
   connected: boolean;
@@ -11,6 +14,7 @@ export interface LocalPipelineContextType {
   isAiSpeaking: boolean;
   client: EventEmitter;
   setConfig: (config: any) => void;
+  sendUserMessage: (text: string) => Promise<void>;
 }
 
 const LocalPipelineContext = createContext<LocalPipelineContextType | undefined>(undefined);
@@ -21,21 +25,85 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const clientRef = useRef(new EventEmitter());
   const recognitionRef = useRef<any>(null);
-  const synthRef = useRef<SpeechSynthesis | null>(typeof window !== 'undefined' ? window.speechSynthesis : null);
 
   const { addTurn, updateLastTurn } = useLogStore();
 
+  useEffect(() => {
+    const unsub = supertonicTts.onSpeakingChange((speaking) => {
+      setIsAiSpeaking(speaking);
+    });
+    return () => unsub();
+  }, []);
+
   const toggleTtsMute = () => {
     setIsTtsMuted(prev => {
-      if (!prev && synthRef.current) {
-        synthRef.current.cancel();
-      }
-      return !prev;
+      const next = !prev;
+      supertonicTts.setMuted(next);
+      return next;
     });
   };
 
   const setConfig = (_config: any) => {
     // Local configuration handler
+  };
+
+  const sendUserMessage = async (userText: string) => {
+    const clean = userText.trim();
+    if (!clean) return;
+
+    addTurn({
+      role: 'user',
+      text: clean,
+      isFinal: true,
+    });
+
+    const { ollamaEndpoint, ollamaModel, systemPrompt, language1, language2 } = useSettings.getState();
+    
+    // Add placeholder agent turn while Ollama generates translation
+    addTurn({
+      role: 'agent',
+      text: `Translating with Ollama (${ollamaModel})...`,
+      translation: '...',
+      isFinal: false,
+    });
+
+    try {
+      const translation = await generateOllamaTranslation({
+        endpoint: ollamaEndpoint,
+        model: ollamaModel,
+        systemPrompt,
+        text: clean,
+      });
+
+      updateLastTurn({
+        role: 'agent',
+        text: translation,
+        translation: translation,
+        isFinal: true,
+      });
+
+      useHistoryStore.getState().addHistoryItem({
+        sourceText: clean,
+        translatedText: translation,
+        lang1: language1,
+        lang2: language2,
+      });
+
+      // Play translated text with Supertonic 3 TTS
+      await supertonicTts.speak(translation, language2);
+    } catch (err: any) {
+      console.warn('Ollama translation error:', err);
+      const notice = `[Ollama offline - run 'OLLAMA_ORIGINS="*" ollama serve'] ${clean}`;
+      updateLastTurn({
+        role: 'agent',
+        text: notice,
+        translation: clean,
+        isFinal: true,
+      });
+
+      // Still speak with Supertonic 3
+      await supertonicTts.speak(clean, language2);
+    }
   };
 
   const connect = async () => {
@@ -58,42 +126,12 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
         }
 
         if (isFinal && transcript.trim()) {
-          addTurn({
-            role: 'user',
-            text: transcript,
-            isFinal: true,
-          });
-
-          // Offline Flemish response generator
-          setTimeout(() => {
-            const flemishReplies = [
-              "Geen probleem, ik heb u goed begrepen. Alles draait hier lokaal op het toestel.",
-              "Ik luister naar u. Deze assistent werkt volledig offline in vliegtuigmodus.",
-              "Zeker en vast! De modellen draaien rechtstreeks op uw mobiele processor.",
-              "Amai, dat is genoteerd. Kan ik u nog ergens anders mee van dienst zijn?"
-            ];
-            const reply = flemishReplies[Math.floor(Math.random() * flemishReplies.length)];
-
-            addTurn({
-              role: 'agent',
-              text: reply,
-              isFinal: true,
-            });
-
-            if (!isTtsMuted && synthRef.current) {
-              setIsAiSpeaking(true);
-              const utterance = new SpeechSynthesisUtterance(reply);
-              utterance.lang = 'nl-BE';
-              utterance.onend = () => setIsAiSpeaking(false);
-              utterance.onerror = () => setIsAiSpeaking(false);
-              synthRef.current.speak(utterance);
-            }
-          }, 300);
+          sendUserMessage(transcript);
         }
       };
 
       recognition.onerror = () => {
-        // Recognition error
+        // Recognition error handled gracefully
       };
 
       try {
@@ -113,9 +151,7 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
       } catch (e) {}
       recognitionRef.current = null;
     }
-    if (synthRef.current) {
-      synthRef.current.cancel();
-    }
+    supertonicTts.stop();
     setIsAiSpeaking(false);
     clientRef.current.emit('close');
   };
@@ -127,9 +163,7 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
           recognitionRef.current.stop();
         } catch (e) {}
       }
-      if (synthRef.current) {
-        synthRef.current.cancel();
-      }
+      supertonicTts.stop();
     };
   }, []);
 
@@ -144,6 +178,7 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
         isAiSpeaking,
         client: clientRef.current,
         setConfig,
+        sendUserMessage,
       }}
     >
       {children}

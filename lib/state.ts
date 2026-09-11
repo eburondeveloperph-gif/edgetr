@@ -6,6 +6,8 @@
 import { create } from 'zustand';
 import { DEFAULT_LIVE_API_MODEL, DEFAULT_VOICE, AVAILABLE_LANGUAGES } from './constants';
 import { MEDICAL_TERMS } from './constants/medical-terms';
+import { fetchOllamaModels, OllamaModelInfo } from './ollama';
+import { supertonicTts } from './supertonic-tts';
 export enum FunctionResponseScheduling {
   INTERRUPT = 'INTERRUPT',
   WHEN_IDLE = 'WHEN_IDLE',
@@ -150,6 +152,10 @@ const initialVoice = getStoredValue('eburon_voice', 'Orus');
 const initialTopic = getStoredValue('eburon_topic', 'Medical Consultation');
 const initialMedicalMode = getStoredValue('eburon_medicalMode', true);
 const initialAutoDetect = getStoredValue('eburon_autoDetect', true);
+const initialOllamaEndpoint = getStoredValue('eburon_ollama_endpoint', 'http://localhost:11434');
+const initialOllamaModel = getStoredValue('eburon_ollama_model', 'llama3.2:latest');
+const initialSupertonicVoice = getStoredValue('eburon_supertonic_voice', 'F1');
+const initialSupertonicSpeed = Number(getStoredValue('eburon_supertonic_speed', 1.0));
 
 const initialSystemPrompt = generateSystemPrompt(
   initialLanguage1,
@@ -172,6 +178,14 @@ export const useSettings = create<{
   medicalMode: boolean;
   autoDetect: boolean;
   customLanguages: { name: string; value: string }[];
+  ollamaEndpoint: string;
+  ollamaModel: string;
+  availableOllamaModels: OllamaModelInfo[];
+  isOllamaConnected: boolean;
+  isOllamaLoading: boolean;
+  ollamaError: string | null;
+  supertonicVoice: string;
+  supertonicSpeed: number;
   setSystemPrompt: (prompt: string) => void;
   setModel: (model: string) => void;
   setVoice: (voice: string) => void;
@@ -181,6 +195,11 @@ export const useSettings = create<{
   setMedicalMode: (enabled: boolean) => void;
   setAutoDetect: (autoDetect: boolean) => void;
   addCustomLanguage: (lang: string) => void;
+  setOllamaEndpoint: (endpoint: string) => void;
+  setOllamaModel: (model: string) => void;
+  setSupertonicVoice: (voiceId: string) => void;
+  setSupertonicSpeed: (speed: number) => void;
+  refreshOllamaModels: () => Promise<void>;
 }>((set, get) => ({
   systemPrompt: initialSystemPrompt,
   model: DEFAULT_LIVE_API_MODEL,
@@ -191,11 +210,64 @@ export const useSettings = create<{
   medicalMode: initialMedicalMode,
   autoDetect: initialAutoDetect,
   customLanguages: [],
+  ollamaEndpoint: initialOllamaEndpoint,
+  ollamaModel: initialOllamaModel,
+  availableOllamaModels: [],
+  isOllamaConnected: false,
+  isOllamaLoading: false,
+  ollamaError: null,
+  supertonicVoice: initialSupertonicVoice,
+  supertonicSpeed: initialSupertonicSpeed,
   setSystemPrompt: prompt => set({ systemPrompt: prompt }),
   setModel: model => set({ model }),
   setVoice: voice => {
     setStoredValue('eburon_voice', voice);
     set({ voice });
+  },
+  setOllamaEndpoint: endpoint => {
+    setStoredValue('eburon_ollama_endpoint', endpoint);
+    set({ ollamaEndpoint: endpoint });
+    get().refreshOllamaModels();
+  },
+  setOllamaModel: model => {
+    setStoredValue('eburon_ollama_model', model);
+    set({ ollamaModel: model });
+  },
+  setSupertonicVoice: voiceId => {
+    setStoredValue('eburon_supertonic_voice', voiceId);
+    supertonicTts.setVoice(voiceId);
+    set({ supertonicVoice: voiceId });
+  },
+  setSupertonicSpeed: speed => {
+    setStoredValue('eburon_supertonic_speed', speed);
+    supertonicTts.setSpeed(speed);
+    set({ supertonicSpeed: speed });
+  },
+  refreshOllamaModels: async () => {
+    set({ isOllamaLoading: true, ollamaError: null });
+    try {
+      const endpoint = get().ollamaEndpoint;
+      const result = await fetchOllamaModels(endpoint);
+      set({
+        availableOllamaModels: result.models,
+        isOllamaConnected: result.isOnline,
+        isOllamaLoading: false,
+        ollamaError: result.isOnline ? null : (result.error || `Ollama unreachable at ${endpoint}`),
+      });
+      if (result.models.length > 0) {
+        const currentModel = get().ollamaModel;
+        const exists = result.models.some(m => m.name === currentModel);
+        if (!exists) {
+          get().setOllamaModel(result.models[0].name);
+        }
+      }
+    } catch (e: any) {
+      set({
+        isOllamaConnected: false,
+        isOllamaLoading: false,
+        ollamaError: e?.message || 'Error connecting to Ollama',
+      });
+    }
   },
   setLanguage1: language => {
     get().addCustomLanguage(language);

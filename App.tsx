@@ -25,7 +25,6 @@ import StreamingConsole from './components/demo/streaming-console/StreamingConso
 
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
-import StorageManagerModal from './components/StorageManagerModal';
 import { LocalPipelineProvider } from './contexts/LocalPipelineContext';
 import { useAuth, updateUserSettings } from './lib/auth';
 import { useSettings } from './lib/state';
@@ -61,7 +60,6 @@ function App() {
         <ErrorScreen />
         <Header />
         <Sidebar />
-        <StorageManagerModal />
         <div className="streaming-console">
           <main>
             <div className="main-app-area">

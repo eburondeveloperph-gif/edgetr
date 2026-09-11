@@ -1,6 +1,6 @@
 {
-  "name": "EdgeTR - Offline Voice Assistant",
-  "description": "EdgeTR - 100% offline voice assistant for Android and iOS powered by Whisper Edge, Qwen 2.5, and Piper Flemish TTS.",
+  "name": "Voice Translator",
+  "description": "Real-time translator powered by local Ollama models (localhost:11434) and Supertonic 3 multilingual TTS from Hugging Face.",
   "requestFramePermissions": [
     "microphone"
   ],
