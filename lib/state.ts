@@ -154,6 +154,7 @@ const initialMedicalMode = getStoredValue('eburon_medicalMode', true);
 const initialAutoDetect = getStoredValue('eburon_autoDetect', true);
 const initialOllamaEndpoint = getStoredValue('eburon_ollama_endpoint', 'http://localhost:11434');
 const initialOllamaModel = getStoredValue('eburon_ollama_model', 'llama3.2:latest');
+const initialLlmProvider = (getStoredValue('eburon_llm_provider', 'gguf') as 'gguf' | 'ollama');
 const initialSupertonicVoice = getStoredValue('eburon_supertonic_voice', 'F1');
 const initialSupertonicSpeed = Number(getStoredValue('eburon_supertonic_speed', 1.0));
 
@@ -178,6 +179,8 @@ export const useSettings = create<{
   medicalMode: boolean;
   autoDetect: boolean;
   customLanguages: { name: string; value: string }[];
+  llmProvider: 'gguf' | 'ollama';
+  activeSettingsTab: 'general' | 'model' | 'voice' | 'history';
   ollamaEndpoint: string;
   ollamaModel: string;
   availableOllamaModels: OllamaModelInfo[];
@@ -186,6 +189,8 @@ export const useSettings = create<{
   ollamaError: string | null;
   supertonicVoice: string;
   supertonicSpeed: number;
+  setLlmProvider: (provider: 'gguf' | 'ollama') => void;
+  setActiveSettingsTab: (tab: 'general' | 'model' | 'voice' | 'history') => void;
   setSystemPrompt: (prompt: string) => void;
   setModel: (model: string) => void;
   setVoice: (voice: string) => void;
@@ -210,6 +215,8 @@ export const useSettings = create<{
   medicalMode: initialMedicalMode,
   autoDetect: initialAutoDetect,
   customLanguages: [],
+  llmProvider: initialLlmProvider,
+  activeSettingsTab: 'general',
   ollamaEndpoint: initialOllamaEndpoint,
   ollamaModel: initialOllamaModel,
   availableOllamaModels: [],
@@ -218,6 +225,11 @@ export const useSettings = create<{
   ollamaError: null,
   supertonicVoice: initialSupertonicVoice,
   supertonicSpeed: initialSupertonicSpeed,
+  setLlmProvider: provider => {
+    setStoredValue('eburon_llm_provider', provider);
+    set({ llmProvider: provider });
+  },
+  setActiveSettingsTab: tab => set({ activeSettingsTab: tab }),
   setSystemPrompt: prompt => set({ systemPrompt: prompt }),
   setModel: model => set({ model }),
   setVoice: voice => {
@@ -324,6 +336,8 @@ export const useUI = create<{
   isSidebarOpen: boolean;
   isStorageOpen: boolean;
   toggleSidebar: () => void;
+  openSidebar: () => void;
+  closeSidebar: () => void;
   toggleStorage: () => void;
   openStorage: () => void;
   closeStorage: () => void;
@@ -331,6 +345,8 @@ export const useUI = create<{
   isSidebarOpen: false,
   isStorageOpen: false,
   toggleSidebar: () => set(state => ({ isSidebarOpen: !state.isSidebarOpen })),
+  openSidebar: () => set({ isSidebarOpen: true }),
+  closeSidebar: () => set({ isSidebarOpen: false }),
   toggleStorage: () => set(state => ({ isStorageOpen: !state.isStorageOpen })),
   openStorage: () => set({ isStorageOpen: true }),
   closeStorage: () => set({ isStorageOpen: false }),

@@ -3,6 +3,7 @@ import EventEmitter from 'eventemitter3';
 import { useLogStore, useSettings } from '../lib/state';
 import { useHistoryStore } from '../lib/history';
 import { generateOllamaTranslation } from '../lib/ollama';
+import { localGgufEngine } from '../lib/local-gguf-engine';
 import { supertonicTts } from '../lib/supertonic-tts';
 
 export interface LocalPipelineContextType {
@@ -23,14 +24,33 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
   const [connected, setConnected] = useState(false);
   const [isTtsMuted, setIsTtsMuted] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const isAiSpeakingRef = useRef(false);
+  const connectedRef = useRef(false);
   const clientRef = useRef(new EventEmitter());
   const recognitionRef = useRef<any>(null);
 
   const { addTurn, updateLastTurn } = useLogStore();
 
   useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
+
+  useEffect(() => {
     const unsub = supertonicTts.onSpeakingChange((speaking) => {
       setIsAiSpeaking(speaking);
+      isAiSpeakingRef.current = speaking;
+
+      // When speaker starts outputting audio, pause/abort speech recognition so the mic does not hear the speaker
+      if (speaking && recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+      } else if (!speaking && connectedRef.current && recognitionRef.current) {
+        // Speaker finished and acoustic echo cooldown cleared: resume listening to user
+        try {
+          recognitionRef.current.start();
+        } catch (e) {}
+      }
     });
     return () => unsub();
   }, []);
@@ -57,23 +77,45 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
       isFinal: true,
     });
 
-    const { ollamaEndpoint, ollamaModel, systemPrompt, language1, language2 } = useSettings.getState();
+    const { llmProvider, ollamaEndpoint, ollamaModel, systemPrompt, language1, language2 } = useSettings.getState();
     
-    // Add placeholder agent turn while Ollama generates translation
+    let modelNameLabel = ollamaModel;
+    if (llmProvider === 'gguf') {
+      const meta = localGgufEngine.getMetadata();
+      modelNameLabel = meta?.fileName ? meta.fileName.replace('.gguf', '') : 'Local GGUF';
+    }
+
+    // Add placeholder agent turn while LLM generates translation
     addTurn({
       role: 'agent',
-      text: `Translating with Ollama (${ollamaModel})...`,
+      text: `Translating with ${llmProvider === 'gguf' ? 'Local GGUF' : 'Ollama'} (${modelNameLabel})...`,
       translation: '...',
       isFinal: false,
     });
 
     try {
-      const translation = await generateOllamaTranslation({
-        endpoint: ollamaEndpoint,
-        model: ollamaModel,
-        systemPrompt,
-        text: clean,
-      });
+      let translation = '';
+
+      if (llmProvider === 'gguf') {
+        if (!localGgufEngine.isReady()) {
+          const restored = await localGgufEngine.tryRestoreFromStorage();
+          if (!restored || !localGgufEngine.isReady()) {
+            throw new Error('No .gguf model is currently loaded. Please go to Settings > Model and upload your GGUF file.');
+          }
+        }
+
+        translation = await localGgufEngine.generateTranslation({
+          text: clean,
+          systemPrompt,
+        });
+      } else {
+        translation = await generateOllamaTranslation({
+          endpoint: ollamaEndpoint,
+          model: ollamaModel,
+          systemPrompt,
+          text: clean,
+        });
+      }
 
       updateLastTurn({
         role: 'agent',
@@ -92,8 +134,11 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
       // Play translated text with Supertonic 3 TTS
       await supertonicTts.speak(translation, language2);
     } catch (err: any) {
-      console.warn('Ollama translation error:', err);
-      const notice = `[Ollama offline - run 'OLLAMA_ORIGINS="*" ollama serve'] ${clean}`;
+      console.warn('Translation error:', err);
+      const notice = llmProvider === 'gguf'
+        ? `[GGUF: ${err?.message || 'Model error'}] ${clean}`
+        : `[Ollama offline - run 'OLLAMA_ORIGINS="*" ollama serve'] ${clean}`;
+
       updateLastTurn({
         role: 'agent',
         text: notice,
@@ -118,6 +163,11 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
       recognition.lang = 'nl-BE';
 
       recognition.onresult = (event: any) => {
+        // Block speaker echo from being registered as user speech
+        if (isAiSpeakingRef.current || supertonicTts.isPlaying()) {
+          return;
+        }
+
         let transcript = '';
         let isFinal = false;
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -126,6 +176,9 @@ export const LocalPipelineProvider = ({ children }: { children: ReactNode }) => 
         }
 
         if (isFinal && transcript.trim()) {
+          if (isAiSpeakingRef.current || supertonicTts.isPlaying()) {
+            return;
+          }
           sendUserMessage(transcript);
         }
       };

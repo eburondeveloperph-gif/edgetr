@@ -1,43 +1,50 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
-import { useState, useEffect } from 'react';
+ */
+
+import React, { useEffect, useState } from 'react';
 import { useSettings, useUI } from '../lib/state';
-import c from 'classnames';
-import { useLocalPipeline } from '../contexts/LocalPipelineContext';
 import { useHistoryStore } from '../lib/history';
 import { AVAILABLE_LANGUAGES } from '../lib/constants';
-import { SUPERTONIC_VOICES } from '../lib/supertonic-tts';
-import { POPULAR_FALLBACK_MODELS } from '../lib/ollama';
+import { SUPERTONIC_VOICES, supertonicTts } from '../lib/supertonic-tts';
+import GgufModelUploader from './GgufModelUploader';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export default function Sidebar() {
-  const { isSidebarOpen, toggleSidebar } = useUI();
+  const { isSidebarOpen, closeSidebar } = useUI();
   const {
     language1, language2, autoDetect, customLanguages, medicalMode,
-    ollamaModel, availableOllamaModels, isOllamaConnected, isOllamaLoading,
+    activeSettingsTab, setActiveSettingsTab,
     supertonicVoice, supertonicSpeed,
     setLanguage1, setLanguage2, setAutoDetect, setMedicalMode,
-    setOllamaModel, setSupertonicVoice, setSupertonicSpeed, refreshOllamaModels
+    setSupertonicVoice, setSupertonicSpeed, refreshOllamaModels
   } = useSettings();
-  const { connected } = useLocalPipeline();
+
   const { history, clearHistory } = useHistoryStore();
+  const [isPlayingSample, setIsPlayingSample] = useState(false);
 
   useEffect(() => {
     refreshOllamaModels();
   }, [refreshOllamaModels]);
 
+  const handleSwapLanguages = () => {
+    if (autoDetect) return;
+    const temp = language1;
+    setLanguage1(language2);
+    setLanguage2(temp);
+  };
+
   const handleExport = () => {
     if (history.length === 0) return;
 
     const doc = new jsPDF();
-    doc.setFontSize(16);
+    doc.setFontSize(15);
     doc.text('Translation History', 14, 20);
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setTextColor(100);
-    doc.text(`Exported: ${new Date().toLocaleString()}`, 14, 28);
+    doc.text(`Exported: ${new Date().toLocaleString()}`, 14, 27);
 
     const tableData = history.map(item => [
       new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -46,11 +53,11 @@ export default function Sidebar() {
     ]);
 
     autoTable(doc, {
-      startY: 34,
-      head: [['Time', 'Source', 'Translation']],
+      startY: 32,
+      head: [['Time', 'Source Text', 'Translation']],
       body: tableData,
       theme: 'striped',
-      headStyles: { fillColor: [68, 141, 255] },
+      headStyles: { fillColor: [59, 130, 246] },
       styles: { fontSize: 9, cellPadding: 3 },
       columnStyles: {
         0: { cellWidth: 25 },
@@ -62,255 +69,325 @@ export default function Sidebar() {
     doc.save('translations.pdf');
   };
 
+  const handlePreviewVoice = async () => {
+    if (isPlayingSample) return;
+    setIsPlayingSample(true);
+    const samplePhrase = language1.toLowerCase().includes('dutch') || language1.toLowerCase().includes('nederlands')
+      ? 'Hallo, dit is een test van de stem.'
+      : 'Hello, this is a test of the voice.';
+    await supertonicTts.speak(samplePhrase, language1);
+    setIsPlayingSample(false);
+  };
+
+  interface TabItem {
+    id: 'general' | 'model' | 'voice' | 'history';
+    label: string;
+    icon: string;
+    badge?: number;
+  }
+
+  const tabs: TabItem[] = [
+    { id: 'general', label: 'General', icon: 'tune' },
+    { id: 'model', label: 'Model', icon: 'memory' },
+    { id: 'voice', label: 'Voice', icon: 'record_voice_over' },
+    { id: 'history', label: 'History', icon: 'history', badge: history.length },
+  ];
+
+  const allLanguages = [...AVAILABLE_LANGUAGES.filter(l => l.value !== 'auto'), ...customLanguages];
+
   return (
-    <aside className={c('sidebar', { open: isSidebarOpen })}>
-      <div className="sidebar-header">
-        <h3>Settings</h3>
-        <button onClick={toggleSidebar} className="close-button" aria-label="Close">
-          <span className="icon">close</span>
-        </button>
-      </div>
+    <>
+      {/* Mobile Dimmed Backdrop Overlay */}
+      <div
+        className={`settings-backdrop ${isSidebarOpen ? 'open' : ''}`}
+        onClick={closeSidebar}
+        aria-hidden="true"
+      />
 
-      <div className="sidebar-content">
-        <div className="sidebar-section">
-          <fieldset disabled={connected}>
-            {/* Ollama Model */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-white/70">
-                  Model
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded font-medium ${
-                      isOllamaConnected
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-amber-500/20 text-amber-300'
-                    }`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${isOllamaConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-                    {isOllamaLoading ? 'Checking...' : isOllamaConnected ? 'Online' : 'Offline'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => refreshOllamaModels()}
-                    disabled={isOllamaLoading}
-                    className="p-1 text-white/60 hover:text-white rounded transition-colors"
-                    title="Refresh"
-                  >
-                    <span className={`icon text-xs leading-none ${isOllamaLoading ? 'animate-spin' : ''}`}>sync</span>
-                  </button>
-                </div>
-              </div>
-
-              <select
-                value={ollamaModel}
-                onChange={e => {
-                  if (e.target.value === '__custom__') {
-                    const custom = prompt('Model tag:', ollamaModel);
-                    if (custom?.trim()) setOllamaModel(custom.trim());
-                  } else {
-                    setOllamaModel(e.target.value);
-                  }
-                }}
-              >
-                {availableOllamaModels.length > 0 ? (
-                  availableOllamaModels.map(m => (
-                    <option key={m.name} value={m.name}>
-                      {m.name}
-                    </option>
-                  ))
-                ) : (
-                  POPULAR_FALLBACK_MODELS.map(m => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))
-                )}
-                <option value="__custom__">+ Custom model...</option>
-              </select>
-
-              {!isOllamaConnected && (
-                <code className="text-[10px] text-amber-200/80 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1 font-mono select-all">
-                  OLLAMA_ORIGINS="*" ollama serve
-                </code>
-              )}
-            </div>
-
-            {/* Voice */}
-            <div className="flex flex-col gap-1.5 mt-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-white/70">
-                Voice
-              </label>
-              <select
-                value={supertonicVoice}
-                onChange={e => setSupertonicVoice(e.target.value)}
-              >
-                {SUPERTONIC_VOICES.map(v => (
-                  <option key={v.id} value={v.id}>
-                    {v.id} · {v.name} ({v.gender})
-                  </option>
-                ))}
-              </select>
-
-              <div className="flex items-center justify-between mt-1 text-xs text-white/60">
-                <span>Speed: {supertonicSpeed.toFixed(1)}x</span>
-                <input
-                  type="range"
-                  min="0.7"
-                  max="1.4"
-                  step="0.1"
-                  value={supertonicSpeed}
-                  onChange={e => setSupertonicSpeed(parseFloat(e.target.value))}
-                  className="w-24 accent-blue-500 cursor-pointer"
-                />
-              </div>
-            </div>
-
-            {/* Staff Language */}
-            <div className="flex flex-col gap-1.5 mt-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-white/70">
-                Staff Language
-              </label>
-              <select
-                value={language1}
-                onChange={e => setLanguage1(e.target.value)}
-              >
-                {[...AVAILABLE_LANGUAGES.filter(l => l.value !== 'auto'), ...customLanguages].map(lang => (
-                  <option key={lang.value} value={lang.value}>
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Guest Language */}
-            <div className="flex flex-col gap-1.5 mt-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-white/70">
-                  Guest Language
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-white/70 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoDetect}
-                    onChange={e => setAutoDetect(e.target.checked)}
-                    className="w-3.5 h-3.5 accent-blue-500"
-                  />
-                  <span>Auto-detect</span>
-                </label>
-              </div>
-
-              <select
-                value={language2}
-                onChange={e => setLanguage2(e.target.value)}
-                disabled={autoDetect}
-              >
-                {[...AVAILABLE_LANGUAGES.filter(l => l.value !== 'auto'), ...customLanguages].map(lang => (
-                  <option key={lang.value} value={lang.value}>
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Mode */}
-            <div className="flex flex-col gap-1.5 mt-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-white/70">
-                Mode
-              </label>
-              <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/30 rounded-lg border border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setMedicalMode(false)}
-                  className={`py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    !medicalMode
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-white/60 hover:text-white'
-                  }`}
-                >
-                  General
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMedicalMode(true)}
-                  className={`py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    medicalMode
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-white/60 hover:text-white'
-                  }`}
-                >
-                  Medical
-                </button>
-              </div>
-            </div>
-          </fieldset>
+      {/* Settings Drawer */}
+      <aside
+        className={`sidebar ${isSidebarOpen ? 'open' : ''}`}
+        role="dialog"
+        aria-label="Application Settings"
+      >
+        {/* Top App Bar with Done Button */}
+        <div className="settings-top-bar">
+          <div className="settings-top-title">
+            <span className="icon">settings</span>
+            <span>Settings</span>
+          </div>
 
           <button
-            onClick={toggleSidebar}
-            className="save-settings-button mt-4"
-            disabled={connected}
+            type="button"
+            onClick={closeSidebar}
+            className="settings-done-btn"
           >
             Done
           </button>
         </div>
 
-        {/* Translation History */}
-        <div className="sidebar-section history-section border-t border-white/10 pt-4">
-          <div className="sidebar-section-title-wrapper">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-white/70">
-              History
-            </h4>
-            <div className="flex gap-2">
-              <button
-                onClick={handleExport}
-                className="export-history-button"
-                disabled={history.length === 0}
-                aria-label="Export history"
-                title="Export history"
-              >
-                <span className="icon text-sm">download</span>
-              </button>
-              <button
-                onClick={clearHistory}
-                className="clear-history-button"
-                disabled={history.length === 0}
-                aria-label="Clear history"
-                title="Clear history"
-              >
-                <span className="icon text-sm">delete_sweep</span>
-              </button>
-            </div>
-          </div>
+        {/* Segmented Tab Navigation Dock */}
+        <div className="settings-tabs-wrapper">
+          <nav className="settings-tabs-nav" aria-label="Settings categories">
+            {tabs.map(tab => {
+              const isActive = activeSettingsTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveSettingsTab(tab.id)}
+                  className={`settings-tab-btn ${isActive ? 'active' : ''}`}
+                  title={tab.label}
+                >
+                  <span className="icon">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  {tab.badge !== undefined && tab.badge > 0 && (
+                    <span className="settings-tab-badge">{tab.badge}</span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
-          <div className="history-list mt-2">
-            {history.length > 0 ? (
-              history.map(item => (
-                <div key={item.id} className="history-item">
-                  <div className="history-item-header">
-                    <span className="history-item-time">
-                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span className="history-item-langs">
-                      {item.lang1} → {item.lang2}
-                    </span>
+        {/* Scrollable Body Content */}
+        <div className="settings-body">
+          {/* GENERAL TAB */}
+          {activeSettingsTab === 'general' && (
+            <>
+              {/* Language Pairing Card */}
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <span>Language Pairing</span>
+                  <button
+                    type="button"
+                    onClick={handleSwapLanguages}
+                    disabled={autoDetect}
+                    className="swap-btn"
+                    title="Swap languages"
+                  >
+                    <span className="icon">sync_alt</span>
+                    <span>Swap</span>
+                  </button>
+                </div>
+
+                <div className="language-pair-container">
+                  <div className="language-field">
+                    <span className="language-field-label">Staff (You)</span>
+                    <select
+                      value={language1}
+                      onChange={e => setLanguage1(e.target.value)}
+                      className="settings-select-styled"
+                    >
+                      {allLanguages.map(lang => (
+                        <option key={lang.value} value={lang.value}>{lang.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="text-xs text-white/80 my-0.5">
-                    {item.sourceText}
-                  </div>
-                  <div className="text-xs text-blue-300 font-medium">
-                    {item.translatedText}
+
+                  <div className="language-field">
+                    <span className="language-field-label">Guest (Visitor)</span>
+                    <select
+                      value={language2}
+                      onChange={e => setLanguage2(e.target.value)}
+                      disabled={autoDetect}
+                      className="settings-select-styled"
+                    >
+                      {allLanguages.map(lang => (
+                        <option key={lang.value} value={lang.value}>{lang.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="history-empty-placeholder">
-                No history yet
-              </p>
-            )}
-          </div>
+              </div>
+
+              {/* Preferences Toggles Card */}
+              <div className="settings-card">
+                <div className="toggle-setting-row">
+                  <div className="toggle-setting-info">
+                    <span className="toggle-setting-title">Auto-Detect Guest Language</span>
+                    <span className="toggle-setting-desc">Detects visitor speech language automatically</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={autoDetect}
+                    onClick={() => setAutoDetect(!autoDetect)}
+                    className={`ios-toggle-switch ${autoDetect ? 'active' : ''}`}
+                    aria-label="Toggle auto detect language"
+                  >
+                    <span className="ios-toggle-thumb" />
+                  </button>
+                </div>
+
+                <div className="toggle-setting-row">
+                  <div className="toggle-setting-info">
+                    <span className="toggle-setting-title">Medical Terminology Mode</span>
+                    <span className="toggle-setting-desc">Optimizes model prompts for clinical accuracy</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={medicalMode}
+                    onClick={() => setMedicalMode(!medicalMode)}
+                    className={`ios-toggle-switch ${medicalMode ? 'active' : ''}`}
+                    aria-label="Toggle medical terminology mode"
+                  >
+                    <span className="ios-toggle-thumb" />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* MODEL TAB */}
+          {activeSettingsTab === 'model' && (
+            <GgufModelUploader />
+          )}
+
+          {/* VOICE TAB */}
+          {activeSettingsTab === 'voice' && (
+            <>
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <span>Speech Synthesis</span>
+                  <button
+                    type="button"
+                    onClick={handlePreviewVoice}
+                    disabled={isPlayingSample}
+                    className="voice-test-btn"
+                  >
+                    <span className="icon">{isPlayingSample ? 'volume_up' : 'play_arrow'}</span>
+                    <span>{isPlayingSample ? 'Playing...' : 'Test Voice'}</span>
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div className="language-field">
+                    <span className="language-field-label">Supertonic 3 Voice Profile</span>
+                    <select
+                      value={supertonicVoice}
+                      onChange={e => setSupertonicVoice(e.target.value)}
+                      className="settings-select-styled"
+                    >
+                      {SUPERTONIC_VOICES.map(v => (
+                        <option key={v.id} value={v.id}>
+                          {v.id} · {v.name} ({v.gender})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="language-field" style={{ paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>
+                      <span>Playback Speed</span>
+                      <span style={{ color: '#60a5fa', fontWeight: 600, fontFamily: 'monospace' }}>
+                        {supertonicSpeed.toFixed(1)}x
+                      </span>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="0.7"
+                      max="1.4"
+                      step="0.1"
+                      value={supertonicSpeed}
+                      onChange={e => setSupertonicSpeed(parseFloat(e.target.value))}
+                      style={{ width: '100%', cursor: 'pointer', margin: '4px 0' }}
+                    />
+
+                    <div className="voice-presets-row">
+                      {[0.8, 1.0, 1.2].map(speed => (
+                        <button
+                          key={speed}
+                          type="button"
+                          onClick={() => setSupertonicSpeed(speed)}
+                          className={`voice-preset-btn ${Math.abs(supertonicSpeed - speed) < 0.05 ? 'active' : ''}`}
+                        >
+                          {speed.toFixed(1)}x {speed === 1.0 ? '(Normal)' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acoustic Shield Status */}
+              <div className="echo-shield-badge">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#34d399', display: 'inline-block' }} />
+                  <span style={{ fontWeight: 600 }}>Acoustic Echo Shield Active</span>
+                </div>
+                <span style={{ opacity: 0.8, fontSize: '10px' }}>Mic muted during speaker</span>
+              </div>
+            </>
+          )}
+
+          {/* HISTORY TAB */}
+          {activeSettingsTab === 'history' && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>
+                  Recorded Sessions ({history.length})
+                </span>
+
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={handleExport}
+                    disabled={history.length === 0}
+                    className="swap-btn"
+                    style={{ background: 'rgba(255,255,255,0.08)', color: '#ffffff', padding: '4px 8px' }}
+                  >
+                    <span className="icon" style={{ fontSize: '13px' }}>download</span>
+                    <span>PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearHistory}
+                    disabled={history.length === 0}
+                    className="swap-btn"
+                    style={{ background: 'rgba(255,255,255,0.08)', color: '#f87171', padding: '4px 8px' }}
+                  >
+                    <span className="icon" style={{ fontSize: '13px' }}>delete</span>
+                    <span>Clear</span>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {history.length > 0 ? (
+                  history.map(item => (
+                    <div key={item.id} className="history-turn-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'rgba(255,255,255,0.45)' }}>
+                        <span style={{ fontFamily: 'monospace' }}>
+                          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span style={{ color: '#93c5fd', fontWeight: 600 }}>
+                          {item.lang1} → {item.lang2}
+                        </span>
+                      </div>
+                      <div style={{ color: 'rgba(255,255,255,0.85)' }}>
+                        {item.sourceText}
+                      </div>
+                      <div style={{ color: '#93c5fd', fontWeight: 500, paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        {item.translatedText}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                    <span className="icon" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>history</span>
+                    <span>No recorded translations yet</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

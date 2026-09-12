@@ -50,10 +50,20 @@ export class AudioRecorder {
   recording: boolean = false;
   recordingWorklet: AudioWorkletNode | undefined;
   vuWorklet: AudioWorkletNode | undefined;
+  private isSpeakerMuted: boolean = false;
 
   private starting: Promise<void> | null = null;
 
   constructor(public sampleRate = 16000) {}
+
+  public setSpeakerMuted(muted: boolean) {
+    this.isSpeakerMuted = muted;
+    if (this.stream) {
+      this.stream.getAudioTracks().forEach(track => {
+        track.enabled = !muted;
+      });
+    }
+  }
 
   async start() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -66,6 +76,7 @@ export class AudioRecorder {
           noiseSuppression: true,
           echoCancellation: true,
           autoGainControl: true,
+          channelCount: 1,
         },
       });
       this.audioContext = await audioContext({ sampleRate: this.sampleRate });
@@ -103,12 +114,12 @@ export class AudioRecorder {
       );
 
       this.recordingWorklet.port.onmessage = async (ev: MessageEvent) => {
-        // Worklet processes recording floats and messages converted buffer
-        const arrayBuffer = ev.data.data.int16arrayBuffer;
+        // Drop mic audio frames completely if speaker is playing to prevent feedback
+        if (this.isSpeakerMuted) return;
 
+        const arrayBuffer = ev.data.data.int16arrayBuffer;
         if (arrayBuffer) {
           const arrayBufferString = arrayBufferToBase64(arrayBuffer);
-          // FIX: Changed this.emit to this.emitter.emit
           this.emitter.emit('data', arrayBufferString);
         }
       };
@@ -121,7 +132,10 @@ export class AudioRecorder {
       );
       this.vuWorklet = new AudioWorkletNode(this.audioContext, vuWorkletName);
       this.vuWorklet.port.onmessage = (ev: MessageEvent) => {
-        // FIX: Changed this.emit to this.emitter.emit
+        if (this.isSpeakerMuted) {
+          this.emitter.emit('volume', 0);
+          return;
+        }
         this.emitter.emit('volume', ev.data.volume);
       };
 

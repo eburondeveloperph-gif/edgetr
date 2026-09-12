@@ -27,6 +27,7 @@ import { useLogStore } from '../../../lib/state';
 import { useAuth, clearUserConversations } from '../../../lib/auth';
 import { useVAD } from '../../../hooks/use-vad';
 import { useLocalPipeline } from '../../../contexts/LocalPipelineContext';
+import { supertonicTts } from '../../../lib/supertonic-tts';
 import MicVisualizer from '../../MicVisualizer';
 
 export type ControlTrayProps = {
@@ -59,12 +60,14 @@ function ControlTray({ children }: ControlTrayProps) {
   }, [connected]);
 
   useEffect(() => {
+    const isMutedBySpeaker = isAiSpeaking || supertonicTts.isPlaying();
+    audioRecorder.setSpeakerMuted(isMutedBySpeaker || muted);
     if (audioRecorder.stream) {
       audioRecorder.stream.getTracks().forEach(track => {
-        track.enabled = !isAiSpeaking && !muted;
+        track.enabled = !isMutedBySpeaker && !muted;
       });
     }
-  }, [isAiSpeaking, muted, audioRecorder.stream]);
+  }, [isAiSpeaking, muted, audioRecorder]);
   
   useEffect(() => {
     if (!connected && connectButtonRef.current) {
@@ -80,6 +83,11 @@ function ControlTray({ children }: ControlTrayProps) {
 
   useEffect(() => {
     const onData = (base64: string) => {
+      // Guard against microphone picking up speaker audio
+      if (isAiSpeaking || supertonicTts.isPlaying()) {
+        return;
+      }
+
       if (typeof (client as any).sendRealtimeInput === 'function') {
         (client as any).sendRealtimeInput([
           {

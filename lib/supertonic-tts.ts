@@ -37,6 +37,8 @@ class SupertonicTtsEngine {
   private audioCtx: AudioContext | null = null;
   private currentVoiceId: string = 'F1';
   private isSpeaking: boolean = false;
+  private isEchoCooldown: boolean = false;
+  private cooldownTimer: any = null;
   private isMuted: boolean = false;
   private speed: number = 1.0;
   private queue: string[] = [];
@@ -72,6 +74,13 @@ class SupertonicTtsEngine {
     return this.statusMessage;
   }
 
+  /**
+   * Returns true if the speaker is currently outputting speech or in acoustic echo cooldown
+   */
+  public isPlaying(): boolean {
+    return this.isSpeaking || this.isEchoCooldown;
+  }
+
   public onSpeakingChange(callback: (speaking: boolean) => void) {
     this.onSpeakingChangeCallbacks.add(callback);
     return () => {
@@ -81,7 +90,22 @@ class SupertonicTtsEngine {
 
   private notifySpeaking(speaking: boolean) {
     this.isSpeaking = speaking;
-    this.onSpeakingChangeCallbacks.forEach(cb => cb(speaking));
+    if (!speaking) {
+      // Begin acoustic room echo cooldown to prevent mic feedback
+      this.isEchoCooldown = true;
+      if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
+      this.cooldownTimer = setTimeout(() => {
+        this.isEchoCooldown = false;
+        this.onSpeakingChangeCallbacks.forEach(cb => cb(false));
+      }, 450);
+    } else {
+      if (this.cooldownTimer) {
+        clearTimeout(this.cooldownTimer);
+        this.cooldownTimer = null;
+      }
+      this.isEchoCooldown = false;
+      this.onSpeakingChangeCallbacks.forEach(cb => cb(true));
+    }
   }
 
   /**
@@ -206,6 +230,10 @@ class SupertonicTtsEngine {
         if (matchingVoice) {
           utterance.voice = matchingVoice;
         }
+
+        utterance.onstart = () => {
+          this.notifySpeaking(true);
+        };
 
         utterance.onend = () => {
           resolve();
